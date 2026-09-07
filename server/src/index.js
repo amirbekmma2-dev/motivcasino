@@ -11,6 +11,7 @@ const healthRouter = require('./routes/health');
 const paymentRouter = require('./routes/payment');
 const { handlePreCheckoutQuery, handleSuccessfulPayment } = paymentRouter;
 const { sendStartAd } = require('./bot/ad');
+const { handleCallbackQuery, handleMessage } = require('./bot/info');
 const MetaCrashRoom = require('./socket/metaCrash');
 const RouletteRoom = require('./socket/roulette');
 const CardsRoom = require('./socket/cards');
@@ -56,7 +57,10 @@ app.post('/webhook', async (req, res) => {
     return handleSuccessfulPayment(req, res);
   }
 
-  if (body.message) {
+  if (body.callback_query) {
+    handleCallbackQuery(body.callback_query).catch(() => {});
+  } else if (body.message) {
+    handleMessage(body.message).catch(() => {});
     sendStartAd(body.message).catch(() => {});
   }
 
@@ -101,7 +105,7 @@ async function setWebhook() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: `${WEBHOOK_URL}/webhook`,
-          allowed_updates: ['pre_checkout_query', 'message'],
+          allowed_updates: ['message', 'pre_checkout_query', 'callback_query'],
         }),
       }
     );
@@ -112,11 +116,36 @@ async function setWebhook() {
   }
 }
 
+async function setMyCommands() {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/setMyCommands`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          commands: [
+            { command: 'start', description: 'Открыть казино' },
+            { command: 'about', description: 'О боте и комиссиях' },
+            { command: 'help', description: 'Помощь' },
+            { command: 'play', description: 'Играть' },
+          ],
+        }),
+      }
+    );
+    const data = await res.json();
+    console.log('Commands set:', data.ok ? 'OK' : data.description);
+  } catch (err) {
+    console.error('setMyCommands failed:', err.message);
+  }
+}
+
 async function main() {
   await getDb();
   console.log('Database initialized');
 
   await setWebhook();
+  await setMyCommands();
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

@@ -9,6 +9,11 @@ export default function Wallet({ navigate }) {
   const { t } = useLang();
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(100);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  const MIN_WITHDRAW = 500;
 
   const handleTopUp = async () => {
     if (!token) return;
@@ -35,6 +40,39 @@ export default function Wallet({ navigate }) {
       console.error('Invoice error:', err);
     }
     setLoading(false);
+  };
+
+  const handleWithdraw = async () => {
+    if (!token || !withdrawAmount) return;
+    const amount = Math.floor(Number(withdrawAmount));
+    if (!Number.isInteger(amount) || amount < MIN_WITHDRAW) {
+      setNotice(t('errMinWithdraw').replace('{n}', String(MIN_WITHDRAW)));
+      return;
+    }
+    setWithdrawing(true);
+    setNotice('');
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/withdraw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `tma ${token}`,
+        },
+        body: JSON.stringify({ amount }),
+      });
+      const data = await res.json();
+      if (data.balance !== undefined) {
+        setNotice(t('withdrawOk'));
+        setWithdrawAmount('');
+        refreshBalance();
+      } else {
+        setNotice(data.error || t('errGeneric'));
+      }
+    } catch (err) {
+      setNotice(t('errGeneric'));
+    }
+    setWithdrawing(false);
   };
 
   return (
@@ -74,6 +112,30 @@ export default function Wallet({ navigate }) {
       <button onClick={handleTopUp} disabled={loading} className="btn-green text-lg py-4">
         {loading ? t('processing') : t('depositStars').replace('{n}', String(selected))}
       </button>
+
+      <div className="card mt-6">
+        <h3 className="font-bold mb-1">{t('withdrawTitle')}</h3>
+        <p className="text-tg-muted text-sm mb-3">{t('minWithdraw').replace('{n}', String(MIN_WITHDRAW))}</p>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={MIN_WITHDRAW}
+          value={withdrawAmount}
+          onChange={(e) => setWithdrawAmount(e.target.value)}
+          placeholder={t('withdrawAmount')}
+          className="w-full p-3 rounded-xl bg-gray-700 text-tg-text mb-3"
+        />
+        <button
+          onClick={handleWithdraw}
+          disabled={withdrawing}
+          className="btn-green text-lg py-3 w-full"
+        >
+          {withdrawing
+            ? t('processing')
+            : t('withdrawBtn').replace('{n}', withdrawAmount || String(MIN_WITHDRAW))}
+        </button>
+        {notice && <p className="text-tg-gold text-sm mt-3 text-center">{notice}</p>}
+      </div>
 
       <div className="card mt-6">
         <h3 className="font-bold mb-2">{t('howItWorks')}</h3>

@@ -1,9 +1,28 @@
 const express = require('express');
-const { BOT_TOKEN, WEBHOOK_URL } = require('../config');
+const { BOT_TOKEN, WEBHOOK_URL, ADMIN_CHAT_ID } = require('../config');
 const { authMiddleware } = require('../auth');
 const { getOrCreateUser, getDb, atomicBalanceOp } = require('../db');
 
+const MIN_WITHDRAW = 500;
+
 const router = express.Router();
+
+async function tgPost(method, body) {
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    return await res.json();
+  } catch (err) {
+    console.error(`[tg] ${method} failed:`, err.message);
+    return null;
+  }
+}
 
 router.get('/balance', authMiddleware, async (req, res) => {
   try {
@@ -138,6 +157,70 @@ async function handleSuccessfulPayment(req, res) {
     res.sendStatus(200);
   }
 }
+
+router.post('/withdraw', authMiddleware, async (req, res) => {
+  try {
+    const amount = Math.floor(Number(req.body?.amount));
+    if (!Number.isInteger(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Invalid amount' });
+    }
+    if (amount < MIN_WITHDRAW) {
+      return res
+        .status(400)
+        .json({ error: `Minimum withdrawal is ${MIN_WITHDRAW} stars` });
+    }
+
+    const db = await getDb();
+    const user = await getOrCreateUser(req.user.id, req.user.username);
+    if (user.balance < amount) {
+      return res.status(400).json({ error: 'Insufficient balance' });
+    }
+
+    await atomicBalanceOp(
+      user.id,
+      -amount,
+      'withdraw',
+      `Withdrawal request: ${amount}`,
+      null,
+      null
+    );
+
+    db.prepare(
+      'INSERT INTO withdrawals (user_id, amount, status) VALUES (?, ?, ?)'
+    ).run(user.id, amount, 'pending');
+
+    const balance = user.balance - amount;
+    const username = user.username ? `@${user.username}` : `id ${user.id}`;
+
+    if (ADMIN_CHAT_ID) {
+      await tgPost('sendMessage', {
+        chat_id: ADMIN_CHAT_ID,
+        text:
+          `\u{1F4B0} <b>Запрос на вывод</b>\n` +
+          `Пользователь: ${username}\n` +
+          `Сумма: <b>${amount} ★</b>\n` +
+          `Остаток: ${balance} ★\n` +
+          `Время: ${new Date().toISOString()}\n\n` +
+          `Выведи ${amount} ★ пользователю (${user.id}).`,
+        parse_mode: 'HTML',
+      });
+    }
+
+    await tgPost('sendMessage', {
+      chat_id: user.id,
+      text:
+        `\u{2705} <b>${amount} ★</b> \u2014 заявка на вывод принята!\n` +
+        `Минимум для вывода: ${MIN_WITHDRAW} ★. Ожидай выплату, обычно это быстро.\n\n` +
+        `\u{1F4B0} <b>${amount} ★</b> \u2014 withdrawal request received!\n` +
+        `Minimum withdrawal: ${MIN_WITHDRAW} ★. We'll pay you out soon.`,
+      parse_mode: 'HTML',
+    });
+
+    res.json({ balance, status: 'pending' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post('/webhook', handlePreCheckoutQuery);
 router.post('/webhook/pre-checkout', handlePreCheckoutQuery);

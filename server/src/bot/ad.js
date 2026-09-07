@@ -87,6 +87,12 @@ async function sendStartAd(message) {
           web_app: { url: WEBHOOK_URL || '' },
         },
       ],
+      [
+        {
+          text: '\u{2139}\u{FE0F} \u041E \u0431\u043E\u0442\u0435',
+          callback_data: 'about',
+        },
+      ],
     ],
   };
 

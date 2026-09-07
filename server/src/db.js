@@ -63,6 +63,15 @@ function getDb() {
     CREATE INDEX IF NOT EXISTS idx_games_status ON games(status);
     CREATE INDEX IF NOT EXISTS idx_game_players_game ON game_players(game_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id);
+
+    CREATE TABLE IF NOT EXISTS withdrawals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      amount INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 
   return db;
