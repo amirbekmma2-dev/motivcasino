@@ -1,11 +1,18 @@
+# ---- Client build ----
+FROM node:20-alpine AS client-build
+WORKDIR /app/client
+COPY client/package.json client/package-lock.json ./
+RUN npm ci
+COPY client/ ./
+RUN npm run build
+
+# ---- Server runtime ----
 FROM node:20-alpine
-
 WORKDIR /app
-
-COPY package.json package-lock.json* ./
+COPY server/package.json server/package-lock.json* ./
 RUN npm ci --omit=dev
-
-COPY . .
+COPY server/ ./
+COPY --from=client-build /app/server/public ./public
 
 RUN mkdir -p /app/data
 

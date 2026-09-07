@@ -5,6 +5,7 @@ node_modules/
 *.db-shm
 build/
 dist/
+server/public/
 .DS_Store
 *.log
 server/data/

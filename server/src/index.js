@@ -25,7 +25,16 @@ const io = new Server(server, {
   pingInterval: 10000,
 });
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      'script-src': ["'self'", 'https://telegram.org'],
+      'img-src': ["'self'", 'data:', 'https:'],
+      'connect-src': ["'self'", 'wss:', 'ws:'],
+    },
+  },
+}));
 app.use(cors());
 app.use(express.json());
 
@@ -46,6 +55,22 @@ app.post('/webhook', async (req, res) => {
   }
 
   res.sendStatus(200);
+});
+
+app.post('/webhook/pre-checkout', async (req, res) => {
+  return paymentRouter.handle('/webhook/pre-checkout', req, res);
+});
+
+app.post('/webhook/successful-payment', async (req, res) => {
+  return paymentRouter.handle('/webhook/successful-payment', req, res);
+});
+
+const path = require('path');
+const DIST = path.join(__dirname, '..', 'public');
+app.use(express.static(DIST));
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/webhook')) return next();
+  res.sendFile(path.join(DIST, 'index.html'));
 });
 
 setupSocketAuth(io);
