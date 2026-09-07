@@ -69,7 +69,6 @@ export default function MetaCrash({ navigate }) {
       <div className="pt-6 flex items-center gap-3 mb-6">
         <button onClick={() => navigate('home')} className="text-tg-muted text-xl">←</button>
         <h1 className="text-xl font-bold">Meta Crash</h1>
-        <span className="text-xs bg-tg-gold/20 text-tg-gold px-2 py-1 rounded-full">max 6x</span>
       </div>
 
       <div className="card mb-4">

@@ -10,8 +10,12 @@ function validateTelegramInitData(initDataRaw) {
 
   const dataCheckString = initDataRaw
     .split('&')
-    .map((chunk) => chunk.split('='))
-    .filter(([key]) => key && key !== 'hash')
+    .map((pair) => {
+      const idx = pair.indexOf('=');
+      if (idx === -1) return [pair, null];
+      return [pair.slice(0, idx), pair.slice(idx + 1)];
+    })
+    .filter(([key, value]) => key && value !== null && key !== 'hash')
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');

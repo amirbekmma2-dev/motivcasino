@@ -9,10 +9,15 @@ function buildInitData(userId, username) {
   const authDate = Math.floor(Date.now() / 1000);
   const fields = [
     `auth_date=${authDate}`,
-    `query_id=AAHtESTKAAAAAO0RJMoA${userId}`,
+    `query_id=AAHtESTKAAAAAO0RJMoA${userId}==`,
     `user=${encodeURIComponent(user)}`,
+    'chat_type=sender',
+    'chat_instance=999999999999999999',
   ];
-  const dataCheckString = fields.join('\n');
+  const dataCheckString = fields
+    .slice()
+    .sort((a, b) => (a.split('=')[0] < b.split('=')[0] ? -1 : 1))
+    .join('\n');
 
   const secretKey = crypto
     .createHmac('sha256', 'WebAppData')
