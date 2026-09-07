@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: motivcasino-server
+    runtime: docker
+    dockerfilePath: ./server/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: PORT
+        value: 3000
+      - key: WEBHOOK_URL
+        sync: false
+      - key: DATABASE_URL
+        value: ./data/casino.db
+      - key: REDIS_URL
+        sync: false
+      - key: ADMIN_CHAT_ID
+        sync: false
