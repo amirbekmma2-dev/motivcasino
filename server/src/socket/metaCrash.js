@@ -154,7 +154,8 @@ class MetaCrashRoom {
     const e = 2 ** 32;
     const h = Math.floor(Math.random() * e);
     if (h % 33 === 0) return 1.0;
-    return Math.max(1.0, parseFloat((1 / (1 - h / e)).toFixed(2)));
+    const fair = 1 / (1 - h / e);
+    return Math.min(6.0, parseFloat(fair.toFixed(2)));
   }
 
   async startRound() {
@@ -211,7 +212,7 @@ class MetaCrashRoom {
 
       const elapsed = Date.now() - startTime;
       this.queue.currentMultiplier = parseFloat(
-        (1 + elapsed / 2000).toFixed(2)
+        (1 + elapsed / 1000).toFixed(2)
       );
 
       if (this.queue.currentMultiplier >= crashPoint) {

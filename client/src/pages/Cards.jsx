@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../providers/AuthProvider';
 import { useSocket } from '../hooks/useSocket';
 import { useCardsStore } from '../stores/cardsStore';
+import { useLang } from '../providers/LangProvider';
+import { translateError } from '../i18n';
 
 const SUIT_SYMBOLS = { hearts: '♥', diamonds: '♦', clubs: '♣', spades: '♠' };
 const SUIT_COLORS = { hearts: 'text-tg-red', diamonds: 'text-tg-red', clubs: 'text-white', spades: 'text-white' };
@@ -30,6 +32,7 @@ export default function Cards({ navigate }) {
   const { token, balance, updateBalance } = useAuth();
   const { emit, on } = useSocket('cards', token);
   const store = useCardsStore();
+  const { t } = useLang();
 
   const [error, setError] = useState('');
   const [resultData, setResultData] = useState(null);
@@ -57,35 +60,26 @@ export default function Cards({ navigate }) {
         store.setMyScore(data.newScore);
         store.setCardsInDeck(data.cardsInDeck);
       }),
-      on('cards:bust', (data) => {
-        store.setResult({ type: 'bust', score: data.score });
-      }),
-      on('cards:stood', () => {
-        store.setStatus('stood');
-      }),
-      on('cards:reveal', (data) => {
-        // opponent cards revealed
-      }),
+      on('cards:bust', (data) => store.setResult({ type: 'bust', score: data.score })),
+      on('cards:stood', () => store.setStatus('stood')),
       on('cards:result', (data) => {
         updateBalance(data.balance);
         store.setResult(data);
         setResultData(data);
         store.setStatus('finished');
-        if (data.opponentHand) {
-          // could show opponent hand
-        }
       }),
       on('cards:cancelled', (data) => {
         updateBalance(data.balance);
         store.reset();
       }),
       on('cards:error', (data) => {
-        setError(data.message);
+        setError(translateError(data.message, t));
         store.setStatus('idle');
       }),
     ];
 
     return () => unsubs.forEach((u) => u?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on]);
 
   const findMatch = useCallback(() => {
@@ -104,12 +98,11 @@ export default function Cards({ navigate }) {
     <div className="min-h-screen pb-24 px-4">
       <div className="pt-6 flex items-center gap-3 mb-6">
         <button onClick={() => navigate('home')} className="text-tg-muted text-xl">←</button>
-        <h1 className="text-xl font-bold">Cards Duel</h1>
+        <h1 className="text-xl font-bold">{t('cardsTitle')}</h1>
       </div>
 
       <div className="card mb-4 text-center">
-        <p className="text-tg-muted text-sm">PvP Blackjack — 70 Stars per player</p>
-        <p className="text-tg-gold text-xs mt-1">Winner takes 98 Stars (70%)</p>
+        <p className="text-tg-muted text-sm">{t('pvpInfo')}</p>
       </div>
 
       {error && (
@@ -120,17 +113,17 @@ export default function Cards({ navigate }) {
 
       {store.status === 'idle' && (
         <button onClick={findMatch} disabled={balance < 70} className="btn-green text-lg py-4">
-          🔍 Find Match (70 ★)
+          {t('findMatch')}
         </button>
       )}
 
       {store.status === 'searching' && (
         <div className="card text-center">
           <div className="text-4xl animate-pulse-slow mb-3">🔍</div>
-          <p className="text-tg-gold font-bold">Searching for opponent...</p>
-          <p className="text-tg-muted text-sm mt-1">Both players must pay 70 Stars</p>
+          <p className="text-tg-gold font-bold">{t('searching')}</p>
+          <p className="text-tg-muted text-sm mt-1">{t('bothPay')}</p>
           <button onClick={cancel} className="btn-red mt-4">
-            Cancel
+            {t('cancel')}
           </button>
         </div>
       )}
@@ -138,9 +131,9 @@ export default function Cards({ navigate }) {
       {store.status === 'waiting' && (
         <div className="card text-center">
           <div className="text-4xl animate-pulse-slow mb-3">⏳</div>
-          <p className="text-tg-gold font-bold">Waiting for match...</p>
+          <p className="text-tg-gold font-bold">{t('waitingMatch')}</p>
           <button onClick={cancel} className="btn-red mt-4">
-            Cancel
+            {t('cancel')}
           </button>
         </div>
       )}
@@ -149,11 +142,15 @@ export default function Cards({ navigate }) {
         <div className="space-y-4">
           <div className="card">
             <p className="text-tg-muted text-sm mb-2">
-              vs <span className="text-white font-medium">{store.opponentUsername}</span>
+              {t('vs')} <span className="text-white font-medium">{store.opponentUsername}</span>
             </p>
-            <p className="text-tg-muted text-xs mb-3">Cards left: {store.cardsInDeck}</p>
+            <p className="text-tg-muted text-xs mb-3">
+              {t('cardsLeft').replace('{n}', store.cardsInDeck)}
+            </p>
 
-            <p className="text-sm text-tg-muted mb-1">Your hand ({store.myScore})</p>
+            <p className="text-sm text-tg-muted mb-1">
+              {t('yourHand').replace('{n}', store.myScore)}
+            </p>
             <div className="flex gap-2 justify-center flex-wrap">
               {store.myHand.map((card, i) => (
                 <CardView key={i} card={card} />
@@ -163,7 +160,7 @@ export default function Cards({ navigate }) {
             {resultData?.opponentHand && (
               <div className="mt-4">
                 <p className="text-sm text-tg-muted mb-1">
-                  Opponent ({resultData.opponentScore})
+                  {t('opponent')} ({resultData.opponentScore})
                 </p>
                 <div className="flex gap-2 justify-center flex-wrap">
                   {resultData.opponentHand.map((card, i) => (
@@ -175,7 +172,7 @@ export default function Cards({ navigate }) {
 
             {!resultData?.opponentHand && store.status === 'playing' && (
               <div className="mt-4">
-                <p className="text-sm text-tg-muted mb-1">Opponent</p>
+                <p className="text-sm text-tg-muted mb-1">{t('opponent')}</p>
                 <div className="flex gap-2 justify-center">
                   <CardView hidden />
                   <CardView hidden />
@@ -195,8 +192,8 @@ export default function Cards({ navigate }) {
                 resultData.result === 'push' ? 'text-tg-gold' :
                 'text-tg-red'
               }`}>
-                {resultData.result === 'win' ? 'YOU WIN!' :
-                 resultData.result === 'push' ? 'PUSH!' : 'YOU LOSE'}
+                {resultData.result === 'win' ? t('youWin') :
+                 resultData.result === 'push' ? t('push') : t('youLose')}
               </p>
               <p className="text-tg-muted mt-1">{resultData.message}</p>
               {resultData.winAmount && (
@@ -208,17 +205,17 @@ export default function Cards({ navigate }) {
           {store.status === 'playing' && store.myScore < 22 && (
             <div className="flex gap-3">
               <button onClick={hit} className="btn-green flex-1">
-                HIT
+                {t('hit')}
               </button>
               <button onClick={stand} className="btn-primary flex-1">
-                STAND
+                {t('stand')}
               </button>
             </div>
           )}
 
           {store.status === 'finished' && (
             <button onClick={() => { store.reset(); setResultData(null); }} className="btn-primary">
-              Play Again
+              {t('playAgain')}
             </button>
           )}
         </div>

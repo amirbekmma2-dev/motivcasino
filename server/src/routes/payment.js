@@ -1,7 +1,7 @@
 const express = require('express');
 const { BOT_TOKEN, WEBHOOK_URL } = require('../config');
 const { authMiddleware } = require('../auth');
-const { getOrCreateUser, getDb } = require('../db');
+const { getOrCreateUser, getDb, atomicBalanceOp } = require('../db');
 
 const router = express.Router();
 
@@ -55,9 +55,8 @@ router.post('/invoice', authMiddleware, async (req, res) => {
           title: `${amount} Stars Deposit`,
           description: `Add ${amount} Telegram Stars to your game balance`,
           payload,
-          provider_token: '',
           currency: 'XTR',
-          prices: [{ label: `${amount} Stars`, amount: amount * 100 }],
+          prices: [{ label: `${amount} Stars`, amount }],
           need_name: false,
           need_phone: false,
           need_email: false,
@@ -78,42 +77,30 @@ router.post('/invoice', authMiddleware, async (req, res) => {
   }
 });
 
-router.post('/webhook/pre-checkout', async (req, res) => {
+async function handlePreCheckoutQuery(req, res) {
   const { pre_checkout_query } = req.body;
-  if (!pre_checkout_query) {
-    return res.sendStatus(400);
-  }
+  if (!pre_checkout_query) return res.sendStatus(400);
 
   try {
     const payload = JSON.parse(pre_checkout_query.invoice_payload);
-    if (payload.type !== 'deposit' || !payload.user_id || !payload.amount) {
-      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerPreCheckoutQuery`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pre_checkout_query_id: pre_checkout_query.id,
-          ok: false,
-          error_message: 'Invalid payment',
-        }),
-      });
-      return res.sendStatus(200);
-    }
+    const isValid = payload.type === 'deposit' && payload.user_id && payload.amount;
 
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerPreCheckoutQuery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         pre_checkout_query_id: pre_checkout_query.id,
-        ok: true,
+        ok: isValid,
+        ...(isValid ? {} : { error_message: 'Invalid payment' }),
       }),
     });
     res.sendStatus(200);
   } catch (err) {
     res.sendStatus(200);
   }
-});
+}
 
-router.post('/webhook/successful-payment', async (req, res) => {
+async function handleSuccessfulPayment(req, res) {
   const { message } = req.body;
   if (!message?.successful_payment) {
     return res.sendStatus(200);
@@ -130,14 +117,14 @@ router.post('/webhook/successful-payment', async (req, res) => {
     const payload = JSON.parse(payment.invoice_payload);
     if (payload.type !== 'deposit') return res.sendStatus(200);
 
-    const db = await require('../db').getDb();
+    const db = await getDb();
     const existing = db.prepare(
       'SELECT id FROM transactions WHERE description LIKE ? AND user_id = ?'
     ).get(`%payment:${payment.telegram_payment_charge_id}%`, userId);
     if (existing) return res.sendStatus(200);
 
     await getOrCreateUser(userId, message.from.username || '');
-    await require('../db').atomicBalanceOp(
+    await atomicBalanceOp(
       userId,
       payload.amount,
       'deposit',
@@ -150,6 +137,12 @@ router.post('/webhook/successful-payment', async (req, res) => {
   } catch (err) {
     res.sendStatus(200);
   }
-});
+}
+
+router.post('/webhook', handlePreCheckoutQuery);
+router.post('/webhook/pre-checkout', handlePreCheckoutQuery);
+router.post('/webhook/successful-payment', handleSuccessfulPayment);
 
 module.exports = router;
+module.exports.handlePreCheckoutQuery = handlePreCheckoutQuery;
+module.exports.handleSuccessfulPayment = handleSuccessfulPayment;

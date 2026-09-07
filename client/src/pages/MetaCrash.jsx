@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../providers/AuthProvider';
 import { useSocket } from '../hooks/useSocket';
 import { useCrashStore } from '../stores/crashStore';
+import { useLang } from '../providers/LangProvider';
+import { translateError } from '../i18n';
 
 const MIN_BET = 20;
 
@@ -9,6 +11,7 @@ export default function MetaCrash({ navigate }) {
   const { token, balance, updateBalance } = useAuth();
   const { emit, on } = useSocket('crash', token);
   const store = useCrashStore();
+  const { t } = useLang();
 
   const [betAmount, setBetAmount] = useState(MIN_BET);
   const [timer, setTimer] = useState(0);
@@ -19,25 +22,14 @@ export default function MetaCrash({ navigate }) {
       on('crash:round_start', (data) => {
         store.setStatus('betting');
         store.setGameId(data.gameId);
-        store.setPlayers(data.players);
-        store.setTotalBets(data.totalBets);
         store.setMyBet(null);
         store.setMyCashout(null);
         store.setCrashPoint(null);
         setTimer(Math.ceil(data.bettingEndsIn / 1000));
         setError('');
       }),
-      on('crash:game_start', (data) => {
-        store.setStatus('running');
-        store.setPlayers(data.players);
-      }),
-      on('crash:tick', (data) => {
-        store.setMultiplier(data.multiplier);
-      }),
-      on('crash:player_joined', (data) => {
-        store.setPlayers(data.players);
-        store.setTotalBets(data.totalBets);
-      }),
+      on('crash:game_start', (data) => store.setStatus('running')),
+      on('crash:tick', (data) => store.setMultiplier(data.multiplier)),
       on('crash:bet_confirmed', (data) => {
         updateBalance(data.balance);
         store.setMyBet({ amount: data.amount });
@@ -45,40 +37,23 @@ export default function MetaCrash({ navigate }) {
       }),
       on('crash:cashout_success', (data) => {
         updateBalance(data.balance);
-        store.setMyCashout({
-          multiplier: data.multiplier,
-          winAmount: data.winAmount,
-        });
-      }),
-      on('crash:player_cashout', (data) => {
-        if (data.userId !== token) {
-          store.setPlayers((prev) =>
-            prev.map((p) =>
-              p.userId === data.userId
-                ? { ...p, cashedOut: true, cashOutMultiplier: data.multiplier }
-                : p
-            )
-          );
-        }
+        store.setMyCashout({ multiplier: data.multiplier, winAmount: data.winAmount });
       }),
       on('crash:game_crash', (data) => {
         store.setStatus('crashed');
         store.setCrashPoint(data.crashPoint);
       }),
-      on('crash:round_empty', () => {
-        store.setStatus('waiting');
-      }),
-      on('crash:error', (data) => {
-        setError(data.message);
-      }),
+      on('crash:round_empty', () => store.setStatus('waiting')),
+      on('crash:error', (data) => setError(translateError(data.message, t))),
     ];
 
     return () => unsubs.forEach((u) => u?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on]);
 
   useEffect(() => {
     if (timer <= 0) return;
-    const interval = setInterval(() => setTimer((t) => t - 1), 1000);
+    const interval = setInterval(() => setTimer((x) => x - 1), 1000);
     return () => clearInterval(interval);
   }, [timer]);
 
@@ -87,15 +62,14 @@ export default function MetaCrash({ navigate }) {
     emit('crash:bet', { amount: betAmount });
   }, [emit, betAmount]);
 
-  const cashout = useCallback(() => {
-    emit('crash:cashout', {});
-  }, [emit]);
+  const cashout = useCallback(() => emit('crash:cashout', {}), [emit]);
 
   return (
     <div className="min-h-screen pb-24 px-4">
       <div className="pt-6 flex items-center gap-3 mb-6">
         <button onClick={() => navigate('home')} className="text-tg-muted text-xl">←</button>
         <h1 className="text-xl font-bold">Meta Crash</h1>
+        <span className="text-xs bg-tg-gold/20 text-tg-gold px-2 py-1 rounded-full">max 6x</span>
       </div>
 
       <div className="card mb-4">
@@ -107,16 +81,16 @@ export default function MetaCrash({ navigate }) {
           )}
           {store.status === 'betting' && (
             <div className="text-4xl font-bold text-tg-gold my-4 animate-pulse-slow">
-              BETTING
+              {t('betting')}
               {timer > 0 && <span className="text-2xl ml-2">{timer}s</span>}
             </div>
           )}
           {store.status === 'waiting' && (
-            <div className="text-tg-muted my-4 text-lg">Waiting for players...</div>
+            <div className="text-tg-muted my-4 text-lg">{t('waitingRound')}</div>
           )}
           {store.status === 'crashed' && store.crashPoint && (
             <div className="text-tg-red text-lg mt-2">
-              Crashed at {store.crashPoint}x
+              {t('crashedAt').replace('{x}', store.crashPoint)}
             </div>
           )}
         </div>
@@ -124,29 +98,11 @@ export default function MetaCrash({ navigate }) {
         {store.myCashout && (
           <div className="bg-tg-green/20 rounded-xl p-3 text-center mt-3">
             <p className="text-tg-green font-bold">
-              Cashed out at {store.myCashout.multiplier}x
+              {t('cashedOutAt').replace('{x}', store.myCashout.multiplier)}
             </p>
             <p className="text-2xl font-bold text-tg-gold">+{store.myCashout.winAmount} ★</p>
           </div>
         )}
-      </div>
-
-      <div className="card mb-4">
-        <p className="text-tg-muted text-sm mb-2">Players ({store.players.length})</p>
-        <div className="space-y-1 max-h-32 overflow-y-auto">
-          {store.players.map((p) => (
-            <div key={p.userId} className="flex justify-between text-sm">
-              <span className="truncate">{p.username}</span>
-              <span className="text-tg-muted">
-                {p.amount}★ {p.cashedOut ? `@${p.cashOutMultiplier}x` : ''}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="border-t border-gray-700 mt-2 pt-2 flex justify-between text-sm">
-          <span className="text-tg-muted">Total bets</span>
-          <span className="font-bold">{store.totalBets} ★</span>
-        </div>
       </div>
 
       {error && (
@@ -158,7 +114,7 @@ export default function MetaCrash({ navigate }) {
       {store.status === 'betting' && !store.myBet && (
         <div className="space-y-3">
           <div className="card">
-            <label className="text-tg-muted text-sm">Bet Amount (Stars)</label>
+            <label className="text-tg-muted text-sm">{t('betAmount')}</label>
             <div className="flex gap-2 mt-2">
               {[20, 50, 100, 200].map((a) => (
                 <button
@@ -181,23 +137,20 @@ export default function MetaCrash({ navigate }) {
             />
           </div>
           <button onClick={placeBet} disabled={betAmount > balance} className="btn-green">
-            Place Bet — {betAmount} ★
+            {t('placeBet').replace('{n}', String(betAmount))}
           </button>
         </div>
       )}
 
       {store.status === 'running' && store.myBet && !store.myCashout && (
         <button onClick={cashout} className="btn-green text-xl py-4">
-          💰 CASH OUT — {(store.myBet.amount * store.multiplier).toFixed(0)} ★
+          {t('cashOut').replace('{n}', (store.myBet.amount * store.multiplier).toFixed(0))}
         </button>
       )}
 
       {store.status === 'crashed' && (
-        <button
-          onClick={() => store.reset()}
-          className="btn-primary"
-        >
-          Back to Lobby
+        <button onClick={() => store.reset()} className="btn-primary">
+          {t('backLobby')}
         </button>
       )}
     </div>

@@ -2,12 +2,14 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../providers/AuthProvider';
 import { useSocket } from '../hooks/useSocket';
 import { useRouletteStore } from '../stores/rouletteStore';
+import { useLang } from '../providers/LangProvider';
+import { translateError } from '../i18n';
 
 const MIN_BET = 20;
 const BET_OPTIONS = [
-  { type: 'red', label: 'Red', color: 'bg-tg-red', numbers: '1-36 odd' },
-  { type: 'black', label: 'Black', color: 'bg-gray-800', numbers: '1-36 even' },
-  { type: 'green', label: 'Green (0)', color: 'bg-tg-green', numbers: 'x14' },
+  { type: 'red', color: 'bg-tg-red' },
+  { type: 'black', color: 'bg-gray-800' },
+  { type: 'green', color: 'bg-tg-green' },
 ];
 
 const COLOR_RESULT = {
@@ -20,6 +22,7 @@ export default function Roulette({ navigate }) {
   const { token, balance, updateBalance } = useAuth();
   const { emit, on } = useSocket('roulette', token);
   const store = useRouletteStore();
+  const { t } = useLang();
 
   const [betAmount, setBetAmount] = useState(MIN_BET);
   const [selectedType, setSelectedType] = useState('red');
@@ -32,17 +35,11 @@ export default function Roulette({ navigate }) {
       on('roulette:round_start', (data) => {
         store.setStatus('betting');
         store.setGameId(data.gameId);
-        store.setPlayers(data.players);
-        store.setTotalBets(data.totalBets);
         store.setMyBet(null);
         store.setLastResult(null);
         setTimer(Math.ceil(data.bettingEndsIn / 1000));
         setSpinAnim(false);
         setError('');
-      }),
-      on('roulette:player_joined', (data) => {
-        store.setPlayers(data.players);
-        store.setTotalBets(data.totalBets);
       }),
       on('roulette:bet_confirmed', (data) => {
         updateBalance(data.balance);
@@ -57,22 +54,18 @@ export default function Roulette({ navigate }) {
         store.setStatus('result');
         store.setLastResult(data);
         setSpinAnim(false);
-        updateBalance(balance);
       }),
-      on('roulette:round_empty', () => {
-        store.setStatus('waiting');
-      }),
-      on('roulette:error', (data) => {
-        setError(data.message);
-      }),
+      on('roulette:round_empty', () => store.setStatus('waiting')),
+      on('roulette:error', (data) => setError(translateError(data.message, t))),
     ];
 
     return () => unsubs.forEach((u) => u?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [on]);
 
   useEffect(() => {
     if (timer <= 0) return;
-    const interval = setInterval(() => setTimer((t) => t - 1), 1000);
+    const interval = setInterval(() => setTimer((x) => x - 1), 1000);
     return () => clearInterval(interval);
   }, [timer]);
 
@@ -96,47 +89,29 @@ export default function Roulette({ navigate }) {
                 {store.lastResult.number}
               </div>
               <p className="text-tg-muted mt-2 capitalize">{store.lastResult.color}</p>
+              {store.lastResult && store.myBet && (
+                <p className={`mt-2 text-xl font-bold ${store.myBet.type === store.lastResult.color ? 'text-tg-green' : 'text-tg-red'}`}>
+                  {store.myBet.type === store.lastResult.color
+                    ? `+${store.myBet.amount * (store.myBet.type === 'green' ? 14 : 2)} ★`
+                    : `−${store.myBet.amount} ★`}
+                </p>
+              )}
             </div>
           ) : spinAnim ? (
             <div className="my-4">
               <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-br from-tg-red via-tg-green to-gray-800 flex items-center justify-center animate-spin text-3xl font-black">
                 ?
               </div>
-              <p className="text-tg-gold mt-2 animate-pulse">Spinning...</p>
+              <p className="text-tg-gold mt-2 animate-pulse">{t('spinning')}</p>
             </div>
           ) : store.status === 'betting' ? (
             <div className="text-4xl font-bold text-tg-gold my-4 animate-pulse-slow">
-              PLACE YOUR BET
+              {t('placeBetTitle')}
               {timer > 0 && <span className="text-2xl ml-2">{timer}s</span>}
             </div>
           ) : (
-            <div className="text-tg-muted my-4">Waiting for round...</div>
+            <div className="text-tg-muted my-4">{t('waitingRound')}</div>
           )}
-        </div>
-
-        {store.lastResult && (
-          <div className="space-y-1 mt-3">
-            {store.lastResult.winners.map((w) => (
-              <div key={w.userId} className="flex justify-between text-sm bg-tg-green/10 rounded-lg px-3 py-1">
-                <span>{w.username}</span>
-                <span className="text-tg-green font-bold">+{w.winAmount} ★</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card mb-4">
-        <p className="text-tg-muted text-sm mb-2">Players ({store.players.length})</p>
-        <div className="space-y-1 max-h-24 overflow-y-auto">
-          {store.players.map((p) => (
-            <div key={p.userId} className="flex justify-between text-sm">
-              <span className="truncate">{p.username}</span>
-              <span className="text-tg-muted">
-                {p.amount}★ — {p.betType}
-              </span>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -149,26 +124,24 @@ export default function Roulette({ navigate }) {
       {store.status === 'betting' && !store.myBet && (
         <div className="space-y-3">
           <div className="card">
-            <p className="text-tg-muted text-sm mb-3">Pick a color</p>
+            <p className="text-tg-muted text-sm mb-3">{t('pickColor')}</p>
             <div className="grid grid-cols-3 gap-2">
               {BET_OPTIONS.map((opt) => (
                 <button
                   key={opt.type}
                   onClick={() => setSelectedType(opt.type)}
                   className={`${opt.color} py-4 rounded-xl font-bold text-lg transition-all ${
-                    selectedType === opt.type
-                      ? 'ring-2 ring-white scale-105'
-                      : 'opacity-70'
+                    selectedType === opt.type ? 'ring-2 ring-white scale-105' : 'opacity-70'
                   }`}
                 >
-                  {opt.label}
+                  {t(opt.type)}
                 </button>
               ))}
             </div>
           </div>
 
           <div className="card">
-            <label className="text-tg-muted text-sm">Bet Amount</label>
+            <label className="text-tg-muted text-sm">{t('betAmount')}</label>
             <div className="flex gap-2 mt-2">
               {[20, 50, 100, 200].map((a) => (
                 <button
@@ -185,20 +158,20 @@ export default function Roulette({ navigate }) {
           </div>
 
           <button onClick={placeBet} disabled={betAmount > balance} className="btn-green">
-            Bet {betAmount} ★ on {selectedType}
+            {t('betOn').replace('{n}', String(betAmount)).replace('{c}', t(selectedType))}
           </button>
         </div>
       )}
 
       {store.status === 'spinning' && store.myBet && (
         <div className="text-center text-tg-gold text-lg animate-pulse">
-          Waiting for result...
+          {t('waitingResult')}
         </div>
       )}
 
       {store.status === 'result' && (
         <button onClick={() => store.reset()} className="btn-primary">
-          Play Again
+          {t('playAgain')}
         </button>
       )}
     </div>

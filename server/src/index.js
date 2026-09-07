@@ -9,6 +9,8 @@ const { getDb } = require('./db');
 const { setupSocketAuth } = require('./socket');
 const healthRouter = require('./routes/health');
 const paymentRouter = require('./routes/payment');
+const { handlePreCheckoutQuery, handleSuccessfulPayment } = paymentRouter;
+const { sendStartAd } = require('./bot/ad');
 const MetaCrashRoom = require('./socket/metaCrash');
 const RouletteRoom = require('./socket/roulette');
 const CardsRoom = require('./socket/cards');
@@ -42,16 +44,20 @@ app.use('/health', healthRouter);
 app.use('/api', paymentRouter);
 
 app.post('/webhook', async (req, res) => {
-  const { update_id, ...update } = req.body;
+  const body = req.body || {};
 
-  if (update.pre_checkout_query) {
-    req.body = { pre_checkout_query: update.pre_checkout_query };
-    return paymentRouter.handle(req, res);
+  if (body.pre_checkout_query) {
+    req.body = { pre_checkout_query: body.pre_checkout_query };
+    return handlePreCheckoutQuery(req, res);
   }
 
-  if (update.message?.successful_payment) {
-    req.body = { message: update.message };
-    return paymentRouter.handle(req, res);
+  if (body.message?.successful_payment) {
+    req.body = { message: body.message };
+    return handleSuccessfulPayment(req, res);
+  }
+
+  if (body.message) {
+    sendStartAd(body.message).catch(() => {});
   }
 
   res.sendStatus(200);
@@ -67,6 +73,8 @@ app.post('/webhook/successful-payment', async (req, res) => {
 
 const path = require('path');
 const DIST = path.join(__dirname, '..', 'public');
+const STATIC = path.join(__dirname, '..', 'static');
+app.use('/static', express.static(STATIC));
 app.use(express.static(DIST));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/webhook')) return next();
