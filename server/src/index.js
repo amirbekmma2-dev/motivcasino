@@ -150,7 +150,29 @@ async function main() {
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/health`);
+    startKeepalive();
   });
+}
+
+const KEEPALIVE_URLS = [
+  'https://neuro-blogger.onrender.com/health',
+];
+
+async function pokeKeepalive() {
+  for (const url of KEEPALIVE_URLS) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
+      console.log('keepalive', url, r.status);
+    } catch (err) {
+      console.warn('keepalive fail', url, err.message);
+    }
+  }
+}
+
+function startKeepalive() {
+  setTimeout(pokeKeepalive, 15000);
+  setInterval(pokeKeepalive, 5 * 60 * 1000);
+  console.log('keepalive started', KEEPALIVE_URLS.join(', '));
 }
 
 main().catch((err) => {
